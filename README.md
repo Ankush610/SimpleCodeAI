@@ -42,7 +42,7 @@ Code runs in your environment with a 10-second timeout for safety. Check generat
 
 ---
 <p align="center">
-  <img src="./deepseekcoder.gif" alt="Animated Coding GIF" width="300"/>
+  <img src="./deepseekcoder.gif" alt="Animated Coding GIF" width="1000"/>
 </p>
 
 **Happy coding!** 💻✨
