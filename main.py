@@ -1,191 +1,158 @@
 import os
+import subprocess
 import torch
 import gradio as gr
-import subprocess
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# Load the model and tokenizer
+# Load model
 @torch.inference_mode()
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/deepseek-coder-6.7b-instruct", trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
-        "deepseek-ai/deepseek-coder-6.7b-instruct", 
-        trust_remote_code=True, 
-        torch_dtype=torch.bfloat16
-    ).cuda()
+        "Qwen/CodeQwen1.5-7B-Chat",
+        torch_dtype=torch.bfloat16,
+        device_map="auto"
+    )
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/CodeQwen1.5-7B-Chat")
     return model, tokenizer
 
-print("Loading DeepSeek Coder model...")
 model, tokenizer = load_model()
-print("Model loaded successfully!")
 
-def generate_code(prompt, max_tokens=512):
-    """Generate code using the DeepSeek Coder model"""
-    messages = [
-        {'role': 'user', 'content': f"Write Python code for: {prompt}"}
-    ]
-    
+# Load dependencies
+from dependencies import GPP_PATH, JAVAC_PATH, JAVA_PATH
+
+# Code generation
+def generate_code(prompt, language, max_tokens=512):
+    messages = [{'role': 'user', 'content': f"Write {language} code for: {prompt}"}]
     inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(model.device)
-    outputs = model.generate(
-        inputs, 
-        max_new_tokens=max_tokens, 
-        do_sample=False, 
-        top_k=50, 
-        top_p=0.95, 
-        num_return_sequences=1, 
-        eos_token_id=tokenizer.eos_token_id
-    )
-    
-    result = tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
-    return result
+    outputs = model.generate(inputs, max_new_tokens=max_tokens, do_sample=False, top_k=50, top_p=0.95,
+                             num_return_sequences=1, eos_token_id=tokenizer.eos_token_id)
+    return tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
 
-def extract_python_code(result):
-    """Extract Python code from the model's response"""
+def extract_code(result, language):
     try:
-        # Try to extract code between triple backticks
         code_blocks = result.split("```")
-        python_code = None
-        
-        # First look specifically for python blocks
+        language_markers = {"python": ["python"], "java": ["java"], "c++": ["cpp", "c++"]}
+        markers = language_markers.get(language.lower(), [language.lower()])
+
         if len(code_blocks) > 1:
             for i in range(1, len(code_blocks), 2):
-                if i < len(code_blocks):
-                    block = code_blocks[i]
-                    # Check if this block is marked as Python
-                    if block.lower().startswith("python"):
-                        python_code = block[6:].strip()  # Remove 'python' and strip whitespace
-                        return python_code, True
-            
-            # If no Python block found, take the first code block that's not a bash/shell command
+                block = code_blocks[i]
+                block_start = block.split('\n', 1)[0].lower() if '\n' in block else block.lower()
+                if any(marker in block_start for marker in markers):
+                    return block.split('\n', 1)[1].strip(), True
             for i in range(1, len(code_blocks), 2):
-                if i < len(code_blocks):
-                    block = code_blocks[i]
-                    block_start = block.split('\n', 1)[0].lower() if '\n' in block else block.lower()
-                    
-                    # Skip bash/shell blocks
-                    if not any(shell in block_start for shell in ["bash", "shell", "sh", "cmd", "powershell"]):
-                        # If no language is specified or it's not a shell script, assume it's Python
-                        if block_start and block_start.strip() and '\n' in block:
-                            # If it starts with a language identifier, remove it
-                            python_code = block.split('\n', 1)[1].strip()
-                        else:
-                            python_code = block.strip()
-                        return python_code, True
-        
-        # If no code blocks with triple backticks or all were shell commands,
-        # check if the entire response looks like code
-        if "def " in result or "import " in result or "class " in result:
-            lines = result.split("\n")
-            code_lines = []
-            for line in lines:
-                if any(keyword in line for keyword in ["def ", "import ", "class ", "print(", "for ", "if ", "while "]):
-                    code_lines.append(line)
-                elif line.strip() and not line.startswith(('#', '//', '/*')):
-                    code_lines.append(line)
-            
-            if code_lines:
-                return "\n".join(code_lines), True
-            
-        # No valid Python code found
-        return result, False
+                block = code_blocks[i]
+                block_start = block.split('\n', 1)[0].lower() if '\n' in block else block.lower()
+                if not any(shell in block_start for shell in ["bash", "shell", "sh", "cmd", "powershell"]):
+                    return block.split('\n', 1)[1].strip(), True
+        return "No code block found in the response.", False
     except Exception as e:
         return f"Error extracting code: {str(e)}", False
 
-def save_and_execute_code(code):
-    """Save code to a file and execute it"""
+def run_subprocess(cmd, timeout=10):
+    env = os.environ.copy()
+    env["PATH"] = f"{os.path.dirname(GPP_PATH)}:{os.path.dirname(JAVAC_PATH)}:" + env.get("PATH", "")
+    env["LD_LIBRARY_PATH"] = f"{os.path.dirname(GPP_PATH)}/../lib64:" + env.get("LD_LIBRARY_PATH", "")
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+
+def save_and_execute_code(code, language):
     try:
-        # Create output directory if it doesn't exist
         os.makedirs("generated_code", exist_ok=True)
-        
-        # Save the code to a file
-        file_path = os.path.join("generated_code", "generated_script.py")
-        with open(file_path, "w") as f:
-            f.write(code)
-        
-        # Execute the code and capture output
-        result = subprocess.run(
-            ["python", file_path], 
-            capture_output=True, 
-            text=True, 
-            timeout=10
-        )
-        
-        # Return execution results
+        file_path = None
+
+        if language.lower() == "python":
+            file_path = "generated_code/generated_script.py"
+            with open(file_path, "w") as f:
+                f.write(code)
+            result = run_subprocess(["python", file_path])
+
+        elif language.lower() == "java":
+            class_name = "Main"
+            for line in code.split("\n"):
+                if "class " in line:
+                    class_name = line.split("class ")[1].split()[0]
+                    break
+            file_path = f"generated_code/{class_name}.java"
+            with open(file_path, "w") as f:
+                f.write(code)
+            compile_result = run_subprocess([JAVAC_PATH, file_path])
+            if compile_result.returncode != 0:
+                return file_path, False, f"Compilation Error:\n{compile_result.stderr}"
+            result = run_subprocess([JAVA_PATH, "-cp", "generated_code", class_name])
+
+        elif language.lower() == "c++":
+            file_path = "generated_code/program.cpp"
+            binary_path = "generated_code/program_exec"
+            with open(file_path, "w") as f:
+                f.write(code)
+            compile_result = run_subprocess([GPP_PATH, file_path, "-o", binary_path])
+            if compile_result.returncode != 0:
+                return file_path, False, f"Compilation Error:\n{compile_result.stderr}"
+            result = run_subprocess([binary_path])
+
+        else:
+            return None, False, f"Unsupported language: {language}"
+
         if result.returncode == 0:
-            execution_output = result.stdout
-            return file_path, True, execution_output
+            return file_path, True, result.stdout
         else:
             return file_path, False, f"Execution Error:\n{result.stderr}"
-    
+
     except subprocess.TimeoutExpired:
         return file_path, False, "Execution timed out after 10 seconds"
     except Exception as e:
         return None, False, f"Error saving or executing code: {str(e)}"
 
-def process_prompt(prompt, max_tokens=512):
-    """Process the user prompt to generate, extract, save, and execute code"""
-    # Generate code using the model
-    model_response = generate_code(prompt, max_tokens)
-    
-    # Extract code from the response
-    code, code_found = extract_python_code(model_response)
-    
-    if code_found:
-        # Save and execute the code
-        file_path, execution_success, execution_output = save_and_execute_code(code)
-        
-        if execution_success:
-            status = f"✅ Code successfully executed and saved to {file_path}"
-        else:
-            status = f"⚠️ Code extracted but execution failed. Saved to {file_path}"
-        
-        return model_response, code, execution_output, status
-    else:
-        # No code could be extracted
-        return model_response, "No Python code could be extracted from the response.", "No code to execute.", "⚠️ No executable Python code found in response."
+def process_prompt(prompt, language, max_tokens):
+    model_response = generate_code(prompt, language, max_tokens)
+    code, found = extract_code(model_response, language)
+    if not found:
+        return model_response, "No code extracted", [("No executable code found in response.", "error")], language
+    file_path, success, output = save_and_execute_code(code, language)
+    highlighted_output = [(line, "error" if "error" in line.lower() or "exception" in line.lower() else "output") for line in output.split('\n')]
+    return model_response, code, highlighted_output, language
 
-# Create Gradio interface
-with gr.Blocks(title="DeepSeek Coder Python Interface") as app:
-    gr.Markdown("# DeepSeek Coder Python Interface")
-    gr.Markdown("Enter a prompt describing the Python code you want to generate.")
-    
+# Gradio UI
+with gr.Blocks(title="MultiLanguage Coder AI") as app:
+    gr.Markdown("<h1><center>🤖 MultiLanguage Coder AI<center><h1>")
+
+    textbox = gr.Textbox(label="Enter code description", lines=3)
+    slider = gr.Slider(label="Context Length", minimum=100, maximum=2048, value=512, step=32)
+
     with gr.Row():
-        with gr.Column(scale=3):
-            prompt_input = gr.Textbox(
-                label="Prompt",
-                placeholder="Example: write code for list comprehension for filtering with test case",
-                lines=3
-            )
-            max_tokens = gr.Slider(
-                label="Maximum Tokens",
-                minimum=100,
-                maximum=2048,
-                value=512,
-                step=32
-            )
-            generate_button = gr.Button("Generate Code")
-        
+        button_python = gr.Button("Python")
+        button_java = gr.Button("Java")
+        button_cpp = gr.Button("C++")
+
+    language_state = gr.State("Python")  # This remembers the last selected language
+
     with gr.Row():
         with gr.Column():
-            status_output = gr.Textbox(label="Status")
-    
-    with gr.Tabs():
-        with gr.TabItem("Original Response"):
-            model_response_output = gr.Markdown()
-        
-        with gr.TabItem("Extracted Code"):
-            extracted_code_output = gr.Code(language="python", label="Extracted Python Code")
-        
-        with gr.TabItem("Execution Result"):
-            execution_output = gr.Textbox(label="Execution Output", lines=10)
-    
-    # Use a list of output components
-    generate_button.click(
-        fn=process_prompt,
-        inputs=[prompt_input, max_tokens],
-        outputs=[model_response_output, extracted_code_output, execution_output, status_output]
-    )
+            markdown = gr.Markdown()
+            highlightedtext = gr.HighlightedText(label="Execution Output", combine_adjacent=True)
+        with gr.Column():
+            code_display = gr.Code()
+            button_run = gr.Button("Run Code")
 
-# Launch the interface
-if __name__ == "__main__":
-    app.launch(share=True)
+    def generate_handler(prompt, max_tokens, language):
+        return process_prompt(prompt, language, max_tokens)
+
+    button_python.click(fn=lambda p, m: generate_handler(p, m, "Python"),
+                        inputs=[textbox, slider],
+                        outputs=[markdown, code_display, highlightedtext, language_state])
+    
+    button_java.click(fn=lambda p, m: generate_handler(p, m, "Java"),
+                      inputs=[textbox, slider],
+                      outputs=[markdown, code_display, highlightedtext, language_state])
+    
+    button_cpp.click(fn=lambda p, m: generate_handler(p, m, "C++"),
+                     inputs=[textbox, slider],
+                     outputs=[markdown, code_display, highlightedtext, language_state])
+
+    @button_run.click(inputs=[code_display, slider, language_state],
+                      outputs=[highlightedtext])
+    def run_code_handler(code, _, language):
+        _, success, output = save_and_execute_code(code, language)
+        return [(line, "error" if "error" in line.lower() or "exception" in line.lower() else "output") for line in output.split("\n")]
+
+app.launch(share=True)
