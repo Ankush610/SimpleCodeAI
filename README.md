@@ -41,5 +41,8 @@ The interface leverages DeepSeek's 6.7B parameter model to generate high-quality
 Code runs in your environment with a 10-second timeout for safety. Check generated code before using in production!
 
 ---
+<p align="center">
+  <img src="./deepseekcoder.gif" alt="Animated Coding GIF" width="300"/>
+</p>
 
 **Happy coding!** 💻✨
