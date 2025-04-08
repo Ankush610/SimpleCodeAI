@@ -1,15 +1,21 @@
-# 🚀 DeepSeek Coder Gradio Interface
+# 🧞‍♂️ CodeGenie
 
-Turn your ideas into Python code with AI! A sleek interface for the powerful DeepSeek Coder model.
+Turn your ideas into working code across **Python**, **Java**, and **C++** using AI!  
+CodeGenie is a sleek, powerful interface built on top of CodeQwen1.5-7B-Chat.
 
-## ✨ Features
+---
 
-- **AI-Powered Code Generation** - Transform natural language prompts into working Python code
-- **Smart Code Extraction** - Automatically finds and extracts Python code from AI responses
-- **One-Click Execution** - Run the generated code and see results instantly
-- **Beautiful Interface** - Clean, tabbed design for a seamless experience
+✨ **Features**
 
-## 🛠️ Quick Start
+- 💡 **AI-Powered Code Generation** – Turn natural language into real code
+- 📦 **Multi-Language Support** – Works with Python, Java, and C++
+- ⚙️ **Auto Compile & Run** – Generate and execute code instantly
+- 🎨 **Modern Interface** – Clean, interactive UI powered by Gradio
+- 🔍 **Smart Code Extraction** – Finds the best code snippets in AI responses
+
+---
+
+🛠️ **Quick Start**
 
 ```bash
 # Install dependencies
@@ -19,28 +25,31 @@ pip install torch transformers gradio
 python main.py
 ```
 
-## 💻 How to Use
+---
 
-1. **Describe** the code you want in plain English
-2. **Generate** with a single click
-3. **View** the code and execution results
-4. **Save** and use the code in your projects
-
-## 🧠 Under the Hood
-
-The interface leverages DeepSeek's 6.7B parameter model to generate high-quality Python code. Our smart extraction algorithm finds the most relevant Python snippets even when mixed with other content.
-
-## 📝 Example Prompts
-
-- "Create a function to find prime numbers with test cases"
-- "Write a list comprehension that filters even numbers"
-- "Generate a simple Flask API with one endpoint"
-
-## ⚠️ Note
-
-Code runs in your environment with a 10-second timeout for safety. Check generated code before using in production!
+💻 **How to Use**
+1. Describe your code idea in plain English  
+2. Choose your language – Python, Java, or C++  
+3. Generate & run with a single click  
+4. View output, copy or save the code
 
 ---
+
+🧠 **Under the Hood**
+Built on **Qwen’s CodeQwen1.5-7B-Chat** model with smart extraction, auto-compilation, and secure execution with timeouts.
+
+---
+
+📝 **Example Prompts**
+- "Write a Python function for factorial with recursion"
+- "Create a Java class to manage a student database"
+- "Generate a C++ program to implement Dijkstra’s algorithm"
+
+---
+
+⚠️ **Note**
+Code runs locally with a 10-second timeout. Review all generated code before using it in production environments.
+
 <p align="center">
   <img src="./MultiLangAI.gif" alt="Animated Coding GIF" width="1000"/>
 </p>
