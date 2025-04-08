@@ -17,7 +17,7 @@ def load_model():
 
 model, tokenizer = load_model()
 
-# Load dependencies
+# Load dependencies (It conatains path varaibles for each compiler)
 from dependencies import GPP_PATH, JAVAC_PATH, JAVA_PATH
 
 # Code generation
