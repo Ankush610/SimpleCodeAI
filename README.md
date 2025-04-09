@@ -32,6 +32,7 @@ python main.py
 2. Choose your language – Python, Java, or C++  
 3. Generate & run with a single click  
 4. View output, copy or save the code
+5. Update the code, execute it (if needed)
 
 ---
 
